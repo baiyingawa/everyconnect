@@ -3,6 +3,7 @@ import type { InboundMessage, OutboundMessage, PlatformAdapter } from '../platfo
 import { DEFAULT_EVERYCONNECT_SETTINGS, type EveryConnectSettings, type SettingsStore } from '../session/store.js'
 
 const PAGE_SIZE = 20
+const STREAM_FLUSH_DELAY_MS = 180
 
 export interface DshRpcRequest {
   rpcId: string
@@ -121,6 +122,8 @@ export class WechatDshSessionRouter {
   private readonly subscribers = new Map<string, Map<string, string>>()
   private readonly controller = new AbortController()
   private readonly stepText = new Map<string, string>()
+  private readonly stepSentLength = new Map<string, number>()
+  private readonly streamTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
   constructor(
     private readonly api: HostApiProxy,
@@ -211,22 +214,31 @@ export class WechatDshSessionRouter {
       if (!text) return
       const stepKey = stepKeyOf(sessionId, data)
       this.streamedSteps.add(stepKey)
-      if (this.settings.mergeAssistantInfo) {
-        this.appendStepText(stepKey, text)
-        return
-      }
-      await this.sendAssistantText(senders, text)
+      this.appendStepText(stepKey, text)
+      if (!this.settings.mergeAssistantInfo) this.scheduleStreamFlush(stepKey, senders)
       return
     }
     if (record.type !== 'assistant/message') return
 
     const stepKey = stepKeyOf(sessionId, data)
+    this.cancelStreamFlush(stepKey)
     const bufferedText = this.stepText.get(stepKey) || ''
     this.stepText.delete(stepKey)
-    const text = formatWechatMarkdown(extractMessageText(asRecord(data.message)) || bufferedText)
+    const finalText = extractMessageText(asRecord(data.message)) || bufferedText
     const wasStreamed = this.streamedSteps.delete(stepKey)
-    if (!text || (!this.settings.mergeAssistantInfo && wasStreamed)) return
-    await this.sendAssistantText(senders, text)
+    if (!finalText) {
+      this.stepSentLength.delete(stepKey)
+      return
+    }
+    if (!this.settings.mergeAssistantInfo && wasStreamed) {
+      const sentLength = this.stepSentLength.get(stepKey) || 0
+      this.stepSentLength.delete(stepKey)
+      const remainder = finalText.slice(sentLength)
+      if (remainder) await this.sendAssistantText(senders, remainder)
+      return
+    }
+    this.stepSentLength.delete(stepKey)
+    await this.sendAssistantText(senders, formatWechatMarkdown(finalText))
   }
 
   dispose(): void {
@@ -235,6 +247,9 @@ export class WechatDshSessionRouter {
     this.userQueues.clear()
     this.subscribers.clear()
     this.stepText.clear()
+    this.stepSentLength.clear()
+    for (const timer of this.streamTimers.values()) clearTimeout(timer)
+    this.streamTimers.clear()
     this.streamedSteps.clear()
   }
 
@@ -839,6 +854,31 @@ export class WechatDshSessionRouter {
 
   private appendStepText(stepKey: string, text: string): void {
     this.stepText.set(stepKey, `${this.stepText.get(stepKey) || ''}${text}`)
+  }
+
+  private scheduleStreamFlush(stepKey: string, senders: Map<string, string>): void {
+    const previous = this.streamTimers.get(stepKey)
+    if (previous) clearTimeout(previous)
+    const timer = setTimeout(() => {
+      this.streamTimers.delete(stepKey)
+      void this.flushStreamStep(stepKey, senders)
+    }, STREAM_FLUSH_DELAY_MS)
+    this.streamTimers.set(stepKey, timer)
+  }
+
+  private cancelStreamFlush(stepKey: string): void {
+    const timer = this.streamTimers.get(stepKey)
+    if (timer) clearTimeout(timer)
+    this.streamTimers.delete(stepKey)
+  }
+
+  private async flushStreamStep(stepKey: string, senders: Map<string, string>): Promise<void> {
+    const accumulated = this.stepText.get(stepKey) || ''
+    const sentLength = this.stepSentLength.get(stepKey) || 0
+    const delta = accumulated.slice(sentLength)
+    if (!delta) return
+    await this.sendAssistantText(senders, delta)
+    this.stepSentLength.set(stepKey, accumulated.length)
   }
 
   private async sendAssistantText(senders: Map<string, string>, text: string): Promise<void> {

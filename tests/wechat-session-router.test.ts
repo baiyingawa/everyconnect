@@ -245,6 +245,29 @@ describe('WechatDshSessionRouter', () => {
     expect(replies.filter((reply) => reply.includes('实时'))).toHaveLength(1)
   })
 
+  it('batches realtime chunks so the session name is not repeated for every token', async () => {
+    const { api } = apiWithSessions()
+    const replies: string[] = []
+    const router = new WechatDshSessionRouter(api, async (_senderId, text) => { replies.push(text) })
+    const signal = new AbortController().signal
+
+    await router.handle(message('/'), signal)
+    await router.handle(message('1'), signal)
+    await router.handleEvent({ id: 'session-1' }, {
+      type: 'assistant/chunk',
+      data: { turn: 1, step: 1, chunk: { type: 'text-delta', text: '你好' } },
+    })
+    await router.handleEvent({ id: 'session-1' }, {
+      type: 'assistant/chunk',
+      data: { turn: 1, step: 1, chunk: { type: 'text-delta', text: '，世界' } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 220))
+
+    const streamedReplies = replies.filter((reply) => reply.includes('你好'))
+    expect(streamedReplies).toHaveLength(1)
+    expect(streamedReplies[0]).toBe('`task-1`\n你好，世界')
+  })
+
   it('shows and changes global and session settings', async () => {
     const { api } = apiWithSessions()
     const prompts: unknown[] = []

@@ -58,7 +58,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 pnpm pack --pack-destination dist
-dsh plugin --profile desktop add ./dist/everyconnect-0.4.3.tgz
+dsh plugin --profile desktop add ./dist/everyconnect-0.4.4.tgz
 dsh --profile desktop
 ```
 
