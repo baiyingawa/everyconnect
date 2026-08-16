@@ -52,8 +52,10 @@ export class WechatClawAdapter implements PlatformAdapter {
           if (!message) continue
           if (this.seenMessageIds.has(message.messageId)) continue
           if (message.replyContext) this.session.contextTokens[message.senderId] = message.replyContext.contextToken
-          await this.options.onMessage(message, signal)
           this.rememberMessageId(message.messageId)
+          void Promise.resolve(this.options.onMessage(message, signal)).catch((error) => {
+            if (!signal.aborted && !this.stopped) console.error('[everyconnect] WeChat message dispatch failed:', error)
+          })
         }
 
         this.session.cursor.getUpdatesBuf = result.getUpdatesBuf

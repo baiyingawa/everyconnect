@@ -81,4 +81,46 @@ describe('WechatClawAdapter', () => {
     controller.abort()
     await running
   })
+
+  it('does not block the next poll while DSH handles a previous message', async () => {
+    const store: SessionStore = {
+      async load() { return structuredClone(session) },
+      async save() {},
+      async clear() {},
+    }
+    let releaseDispatch: (() => void) | undefined
+    const dispatchStarted = new Promise<void>((resolve) => { releaseDispatch = resolve })
+    const getUpdates = vi.fn()
+      .mockResolvedValueOnce({ getUpdatesBuf: 'next-1', messages: [{
+        message_type: 1, message_id: 'slow-1', from_user_id: 'user-1', context_token: 'ctx-1',
+        item_list: [{ type: 1, text_item: { text: 'slow' } }],
+      }] })
+      .mockImplementationOnce(async (_cursor: string, signal: AbortSignal) => {
+        releaseDispatch?.()
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+        return { getUpdatesBuf: 'next-2', messages: [] }
+      })
+    const client = {
+      setBaseUrl: vi.fn(),
+      setBotToken: vi.fn(),
+      getUpdates,
+      sendTextMessage: vi.fn(),
+    } as unknown as WechatApiClient
+    const dispatch = new Promise<void>((resolve) => setTimeout(resolve, 1000))
+    const adapter = new WechatClawAdapter({
+      client,
+      sessionStore: store,
+      onMessage: async () => {
+        await dispatch
+      },
+      retryDelayMs: 0,
+    })
+    const controller = new AbortController()
+    const running = adapter.start(controller.signal)
+    await vi.waitFor(() => expect(getUpdates).toHaveBeenCalledTimes(2))
+    expect(getUpdates.mock.calls[1][0]).toBe('next-1')
+    controller.abort()
+    await running
+    await dispatchStarted
+  })
 })
