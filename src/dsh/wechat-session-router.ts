@@ -1007,7 +1007,7 @@ function appendCommandHints(lines: string[]): void {
     '`/setting` 打开整体设置；进入会话后打开会话设置。',
     '`/config` 查看当前会话信息（会话中可用）。',
     '`/stop` 暂停当前会话任务（会话中可用）。',
-    '`/new` 新建工作目录或任务。',
+    '`/new` 新建菜单；`/new workspace` 新建工作目录；`/new task` 新建任务。',
     '`/next`、`/prev` 翻页。',
     '`/back`、`/chat` 返回聊天。',
     '`/exit`、`/home` 退出当前会话并返回首页。',

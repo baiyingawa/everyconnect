@@ -1,6 +1,6 @@
 {
   "name": "everyconnect",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "A DSH multi-platform connector plugin, starting with WeChat Claw/iLink and expanding to QQ and WeCom.",
   "private": true,
   "type": "module",

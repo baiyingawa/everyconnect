@@ -57,6 +57,7 @@ describe('WechatDshSessionRouter', () => {
     expect(replies[0]).toContain('`/setting` 打开整体设置；进入会话后打开会话设置。')
     expect(replies[0]).toContain('`/config` 查看当前会话信息（会话中可用）。')
     expect(replies[0]).toContain('`/stop` 暂停当前会话任务（会话中可用）。')
+    expect(replies[0]).toContain('`/new` 新建菜单；`/new workspace` 新建工作目录；`/new task` 新建任务。')
     expect(prompts).toHaveLength(0)
 
     await router.handle(message('1'), new AbortController().signal)
