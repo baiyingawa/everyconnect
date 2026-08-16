@@ -1,5 +1,6 @@
 import { WechatApiClient } from '../src/wechat/client.js'
 import type { Fetcher } from '../src/wechat/transport.js'
+import { createCipheriv } from 'node:crypto'
 
 describe('WechatApiClient fake transport', () => {
   it('injects fetch and propagates the AbortSignal to requests', async () => {
@@ -59,5 +60,27 @@ describe('WechatApiClient fake transport', () => {
     ])
     expect(JSON.parse(String(calls[1].init.body))).toMatchObject({ status: 1, typing_ticket: 'ticket-1' })
     expect(JSON.parse(String(calls[2].init.body))).toMatchObject({ status: 2, typing_ticket: 'ticket-1' })
+  })
+
+  it('downloads and decrypts CDN media while forwarding the AbortSignal', async () => {
+    const key = Buffer.alloc(16, 9)
+    const cipher = createCipheriv('aes-128-ecb', key, null)
+    const encrypted = Buffer.concat([cipher.update(Buffer.from('file-content')), cipher.final()])
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const fetcher: Fetcher = async (url, init) => {
+      calls.push({ url, init })
+      return new Response(encrypted, { status: 200 })
+    }
+    const client = new WechatApiClient({ fetcher, uinFactory: () => 'test-uin' })
+    const signal = new AbortController().signal
+
+    const content = await client.downloadMedia({
+      kind: 'file', fileName: 'x.txt', mimeType: 'text/plain',
+      remote: { encryptQueryParam: 'q', aesKey: key.toString('base64') },
+    }, signal)
+
+    expect(Buffer.from(content).toString()).toBe('file-content')
+    expect(calls[0].url).toContain('/download?encrypted_query_param=q')
+    expect(calls[0].init.signal).toBe(signal)
   })
 })

@@ -1,10 +1,13 @@
 import { randomUUID } from 'node:crypto'
-import { buildBaseInfo, buildGetTypingTicketPayload, buildGetUpdatesPayload, buildHeaders, buildSendTextMessagePayload, buildSendTypingPayload, DEFAULT_BASE_URL, DEFAULT_CHANNEL_VERSION, parseQRCodePayload, parseQRCodeState, parseTypingTicket, type TypingStatus } from './protocol.js'
+import { createDecipheriv } from 'node:crypto'
+import { buildBaseInfo, buildGetTypingTicketPayload, buildGetUpdatesPayload, buildHeaders, buildSendTextMessagePayload, buildSendTypingPayload, DEFAULT_BASE_URL, DEFAULT_CDN_BASE_URL, DEFAULT_CHANNEL_VERSION, parseQRCodePayload, parseQRCodeState, parseTypingTicket, type TypingStatus } from './protocol.js'
+import type { InboundAttachment } from '../platform/types.js'
 import { requestJson, type Fetcher } from './transport.js'
 
 export interface WechatClientOptions {
   fetcher: Fetcher
   baseUrl?: string
+  cdnBaseUrl?: string
   channelVersion?: string
   uinFactory?: () => string
 }
@@ -19,11 +22,13 @@ export interface GetUpdatesResult {
 export class WechatApiClient {
   private baseUrl: string
   private readonly channelVersion: string
+  private readonly cdnBaseUrl: string
   private readonly uinFactory: () => string
   private botToken = ''
 
   constructor(private readonly options: WechatClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl || DEFAULT_BASE_URL)
+    this.cdnBaseUrl = normalizeBaseUrl(options.cdnBaseUrl || DEFAULT_CDN_BASE_URL)
     this.channelVersion = options.channelVersion || DEFAULT_CHANNEL_VERSION
     this.uinFactory = options.uinFactory || (() => Buffer.from(String(Math.floor(Math.random() * 2 ** 32))).toString('base64'))
   }
@@ -85,6 +90,20 @@ export class WechatApiClient {
     }, signal)
   }
 
+  async downloadMedia(attachment: InboundAttachment, signal: AbortSignal): Promise<Uint8Array> {
+    const remote = attachment.remote
+    if (!remote) throw new Error('WeChat media reference is missing')
+    signal.throwIfAborted()
+    const url = remote.fullUrl || (remote.encryptQueryParam
+      ? `${this.cdnBaseUrl}/download?encrypted_query_param=${encodeURIComponent(remote.encryptQueryParam)}`
+      : '')
+    if (!url) throw new Error('WeChat media download URL is missing')
+    const response = await this.options.fetcher(url, { method: 'GET', headers: { Accept: '*/*' }, signal })
+    if (!response.ok) throw new Error(`WeChat media download failed with HTTP ${response.status}`)
+    const encrypted = new Uint8Array(await response.arrayBuffer())
+    return decryptMedia(encrypted, remote.aesKey)
+  }
+
   async getTypingTicket(ilinkUserId: string, contextToken: string, signal: AbortSignal): Promise<string> {
     const body = await requestJson(this.options.fetcher, `${this.baseUrl}/ilink/bot/getconfig`, {
       method: 'POST',
@@ -105,6 +124,23 @@ export class WechatApiClient {
   private authHeaders(): Record<string, string> {
     return buildHeaders(this.botToken, this.uinFactory())
   }
+}
+
+function decryptMedia(input: Uint8Array, encodedKey: string | undefined): Uint8Array {
+  if (!encodedKey) return input
+  const key = decodeAesKey(encodedKey)
+  const decipher = createDecipheriv('aes-128-ecb', key, null)
+  decipher.setAutoPadding(true)
+  return new Uint8Array(Buffer.concat([decipher.update(input), decipher.final()]))
+}
+
+function decodeAesKey(encodedKey: string): Buffer {
+  const decoded = Buffer.from(encodedKey, 'base64')
+  if (decoded.length === 16) return decoded
+  const decodedText = decoded.toString('utf8').trim()
+  if (/^[0-9a-f]{32}$/i.test(decodedText)) return Buffer.from(decodedText, 'hex')
+  if (/^[0-9a-f]{32}$/i.test(encodedKey)) return Buffer.from(encodedKey, 'hex')
+  throw new Error('WeChat media AES key is invalid')
 }
 
 function normalizeBaseUrl(baseUrl: string): string {

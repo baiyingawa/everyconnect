@@ -53,6 +53,30 @@ describe('WeChat protocol pure functions', () => {
     })
   })
 
+  it('maps voice and file items to downloadable attachments', () => {
+    const media = { encrypt_query_param: 'query', aes_key: Buffer.alloc(16, 7).toString('base64') }
+    expect(parseInboundMessage({
+      message_type: 1,
+      message_id: 'audio-1',
+      from_user_id: 'user-1',
+      item_list: [{ type: 3, voice_item: { media, text: '语音转写' } }],
+    })).toMatchObject({
+      text: '语音转写',
+      rawType: 'audio',
+      attachments: [{ kind: 'audio', fileName: 'wechat-audio.silk', mimeType: 'audio/silk', transcript: '语音转写', remote: { encryptQueryParam: 'query', aesKey: media.aes_key } }],
+    })
+    expect(parseInboundMessage({
+      message_type: 1,
+      message_id: 'file-1',
+      from_user_id: 'user-1',
+      item_list: [{ type: 4, file_item: { file_name: 'report.pdf', len: '12', media } }],
+    })).toMatchObject({
+      text: '[微信文件：report.pdf]',
+      rawType: 'file',
+      attachments: [{ kind: 'file', fileName: 'report.pdf', mimeType: 'application/pdf', size: 12, remote: { encryptQueryParam: 'query', aesKey: media.aes_key } }],
+    })
+  })
+
   it('builds getupdates and sendmessage payloads', () => {
     expect(buildGetUpdatesPayload('cursor')).toEqual({
       get_updates_buf: 'cursor',

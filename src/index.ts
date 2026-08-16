@@ -4,6 +4,7 @@ import { bindPollingLifecycle, bindWechatDshSessionRouter, bindWechatQrRoutes, c
 import type { EffectContext, LazyInjectContext, PollingService, ToolRegistryContext } from './dsh/index.js'
 import type { PlatformAdapter } from './platform/types.js'
 import { FileSessionStore, FileSettingsStore } from './session/store.js'
+import { FileMediaStore } from './session/media-store.js'
 import { WechatApiClient } from './wechat/client.js'
 import { WechatClawAdapter } from './wechat/adapter.js'
 import { WechatQrLoginService } from './wechat/qr-login.js'
@@ -19,6 +20,7 @@ export interface EveryConnectPluginConfig {
   baseUrl?: string
   sessionStorePath?: string
   settingsStorePath?: string
+  mediaStorePath?: string
   webEnabled?: boolean
   getStatus?: () => unknown
 }
@@ -35,6 +37,7 @@ export function apply(ctx: EveryConnectPluginContext, config: EveryConnectPlugin
       baseUrl: config.baseUrl,
     }),
     sessionStore,
+    mediaStore: new FileMediaStore({ rootPath: config.mediaStorePath }),
     onMessage: async (message, signal) => {
       if (router) {
         await router.handle(message, signal)

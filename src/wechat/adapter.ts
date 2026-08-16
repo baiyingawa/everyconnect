@@ -2,6 +2,7 @@ import { WechatApiError } from './errors.js'
 import { WechatApiClient } from './client.js'
 import { parseInboundMessage } from './protocol.js'
 import type { InboundMessage, OutboundMessage, PlatformAdapter } from '../platform/types.js'
+import { FileMediaStore } from '../session/media-store.js'
 import type { EveryConnectSession, SessionStore } from '../session/store.js'
 
 export interface WechatAdapterOptions {
@@ -10,6 +11,7 @@ export interface WechatAdapterOptions {
   onMessage: (message: InboundMessage, signal: AbortSignal) => Promise<void>
   retryDelayMs?: number
   now?: () => number
+  mediaStore?: FileMediaStore
 }
 
 export class WechatClawAdapter implements PlatformAdapter {
@@ -53,7 +55,7 @@ export class WechatClawAdapter implements PlatformAdapter {
           if (this.seenMessageIds.has(message.messageId)) continue
           if (message.replyContext) this.session.contextTokens[message.senderId] = message.replyContext.contextToken
           this.rememberMessageId(message.messageId)
-          void Promise.resolve(this.options.onMessage(message, signal)).catch((error) => {
+          void this.prepareAttachments(message, signal).then(() => this.options.onMessage(message, signal)).catch((error) => {
             if (!signal.aborted && !this.stopped) console.error('[everyconnect] WeChat message dispatch failed:', error)
           })
         }
@@ -110,6 +112,16 @@ export class WechatClawAdapter implements PlatformAdapter {
       this.seenMessageIds.delete(oldest)
     }
     this.session.metadata.recentMessageIds = [...this.seenMessageIds]
+  }
+
+  private async prepareAttachments(message: InboundMessage, signal: AbortSignal): Promise<void> {
+    if (!message.attachments?.length) return
+    const store = this.options.mediaStore || new FileMediaStore()
+    await Promise.all(message.attachments.map(async (attachment) => {
+      if (!attachment.remote) return
+      const data = await this.options.client.downloadMedia(attachment, signal)
+      attachment.localPath = await store.save(message.messageId, attachment, data, signal)
+    }))
   }
 }
 

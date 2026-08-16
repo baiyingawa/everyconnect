@@ -190,7 +190,7 @@ export class WechatDshSessionRouter {
         payload: {
           sessionId: state.selectedSessionId,
           mode: 'queue',
-          content: [{ type: 'text', text: message.text }],
+          content: buildPromptContent(message),
         },
       })
     } catch (error) {
@@ -1004,6 +1004,21 @@ function extractMessageText(message: Record<string, unknown>): string {
     const record = asRecord(block)
     return record.type === 'text' && isString(record.text) ? record.text : ''
   }).filter(Boolean).join('')
+}
+
+function buildPromptContent(message: InboundMessage): Array<{ type: 'text'; text: string }> {
+  const content: Array<{ type: 'text'; text: string }> = [{ type: 'text', text: message.text }]
+  for (const attachment of message.attachments || []) {
+    const label = attachment.kind === 'audio' ? '音频' : '文件'
+    const location = attachment.localPath || '附件下载失败'
+    const transcript = attachment.transcript ? `\n语音转写：${attachment.transcript}` : ''
+    const duration = attachment.durationMs ? `\n时长：${Math.round(attachment.durationMs / 1000)} 秒` : ''
+    content.push({
+      type: 'text',
+      text: `\n[微信${label}] ${attachment.fileName}\nMIME：${attachment.mimeType}\n本地路径：${location}${duration}${transcript}`,
+    })
+  }
+  return content
 }
 
 function extractChunkText(chunk: Record<string, unknown>): string {

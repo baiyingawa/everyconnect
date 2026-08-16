@@ -1,5 +1,20 @@
 export type PlatformId = 'wechat-claw'
 
+export interface InboundAttachment {
+  kind: 'audio' | 'file'
+  fileName: string
+  mimeType: string
+  size?: number
+  durationMs?: number
+  transcript?: string
+  localPath?: string
+  remote?: {
+    fullUrl?: string
+    encryptQueryParam?: string
+    aesKey?: string
+  }
+}
+
 export interface InboundMessage {
   platform: PlatformId
   accountId: string
@@ -7,11 +22,12 @@ export interface InboundMessage {
   senderId: string
   messageId: string
   text: string
+  attachments?: InboundAttachment[]
   receivedAt: number
   replyContext?: {
     contextToken: string
   }
-  rawType: 'text'
+  rawType: 'text' | 'audio' | 'file'
 }
 
 export interface OutboundMessage {

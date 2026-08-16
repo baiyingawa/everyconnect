@@ -16,6 +16,16 @@ function message(text: string, senderId = 'wechat-user'): InboundMessage {
   }
 }
 
+function fileMessage(senderId = 'wechat-user'): InboundMessage {
+  return {
+    ...message('[微信文件：report.pdf]', senderId),
+    rawType: 'file',
+    attachments: [{
+      kind: 'file', fileName: 'report.pdf', mimeType: 'application/pdf', localPath: 'C:/inbox/report.pdf',
+    }],
+  }
+}
+
 function apiWithSessions(count = 2) {
   const prompts: unknown[] = []
   const api: HostApiProxy = {
@@ -71,6 +81,21 @@ describe('WechatDshSessionRouter', () => {
       sessionId: 'session-1',
       content: [{ type: 'text', text: 'send this' }],
     })
+  })
+
+  it('forwards the local path and metadata for a media message', async () => {
+    const { api, prompts } = apiWithSessions()
+    const router = new WechatDshSessionRouter(api, async () => {})
+    const signal = new AbortController().signal
+
+    await router.handle(message('/'), signal)
+    await router.handle(message('1'), signal)
+    await router.handle(fileMessage(), signal)
+
+    expect((prompts[0] as { payload: { content: Array<{ text: string }> } }).payload.content).toEqual([
+      { type: 'text', text: '[微信文件：report.pdf]' },
+      { type: 'text', text: '\n[微信文件] report.pdf\nMIME：application/pdf\n本地路径：C:/inbox/report.pdf' },
+    ])
   })
 
   it('exits the selected session with /exit and /home', async () => {

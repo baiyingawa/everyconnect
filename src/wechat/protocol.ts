@@ -1,6 +1,7 @@
-import type { InboundMessage } from '../platform/types.js'
+import type { InboundAttachment, InboundMessage } from '../platform/types.js'
 
 export const DEFAULT_BASE_URL = 'https://ilinkai.weixin.qq.com'
+export const DEFAULT_CDN_BASE_URL = 'https://novac2c.cdn.weixin.qq.com/c2c'
 export const DEFAULT_CHANNEL_VERSION = '1.0.2'
 
 export interface QRCodePayload {
@@ -23,6 +24,12 @@ export interface SendTextMessageInput {
   contextToken: string
   text: string
   channelVersion?: string
+}
+
+interface CDNMedia {
+  full_url?: string
+  encrypt_query_param?: string
+  aes_key?: string
 }
 
 export type TypingStatus = 1 | 2
@@ -111,7 +118,10 @@ export function parseInboundMessage(input: unknown, receivedAt = Date.now()): In
     .map((item) => stringField(asRecord(item.text_item), 'text'))
     .filter(Boolean)
     .join('\n')
-  if (!text) return null
+  const attachments = items.flatMap(parseInboundAttachment)
+  const transcript = attachments.map((attachment) => attachment.transcript || '').filter(Boolean).join('\n')
+  const messageText = [text, transcript].filter(Boolean).join('\n')
+  if (!messageText && attachments.length === 0) return null
 
   const contextToken = stringField(message, 'context_token')
   const messageId =
@@ -125,11 +135,93 @@ export function parseInboundMessage(input: unknown, receivedAt = Date.now()): In
     conversationId: stringField(message, 'conversation_id') || senderId,
     senderId,
     messageId,
-    text,
+    text: messageText || attachments.map(formatAttachmentText).join('\n'),
+    ...(attachments.length ? { attachments } : {}),
     receivedAt,
     ...(contextToken ? { replyContext: { contextToken } } : {}),
-    rawType: 'text',
+    rawType: attachments[0]?.kind || 'text',
   }
+}
+
+function parseInboundAttachment(item: unknown): InboundAttachment[] {
+  if (!isRecord(item)) return []
+  const type = numberField(item, 'type')
+  if (type === 3) {
+    const voice = asOptionalRecord(item.voice_item) || {}
+    const media = parseMedia(voice?.media)
+    if (!media) return []
+    return [{
+      kind: 'audio',
+      fileName: voiceFileName(numberField(voice, 'encode_type')),
+      mimeType: voiceMimeType(numberField(voice, 'encode_type')),
+      ...(numberField(voice, 'playtime') ? { durationMs: numberField(voice, 'playtime') } : {}),
+      ...(stringField(voice, 'text') ? { transcript: stringField(voice, 'text') } : {}),
+      remote: media,
+    }]
+  }
+  if (type === 4) {
+    const file = asOptionalRecord(item.file_item) || {}
+    const media = parseMedia(file?.media)
+    if (!media) return []
+    return [{
+      kind: 'file',
+      fileName: safeFileName(stringField(file, 'file_name') || 'wechat-file'),
+      mimeType: mimeTypeFromName(stringField(file, 'file_name')),
+      ...(sizeField(file, 'len') ? { size: sizeField(file, 'len') } : {}),
+      remote: media,
+    }]
+  }
+  return []
+}
+
+function parseMedia(input: unknown): InboundAttachment['remote'] | undefined {
+  const media = asOptionalRecord(input) as CDNMedia | undefined
+  if (!media) return undefined
+  const fullUrl = typeof media.full_url === 'string' ? media.full_url : undefined
+  const encryptQueryParam = typeof media.encrypt_query_param === 'string' ? media.encrypt_query_param : undefined
+  const aesKey = typeof media.aes_key === 'string' ? media.aes_key : undefined
+  if (!fullUrl && !encryptQueryParam) return undefined
+  return { ...(fullUrl ? { fullUrl } : {}), ...(encryptQueryParam ? { encryptQueryParam } : {}), ...(aesKey ? { aesKey } : {}) }
+}
+
+function formatAttachmentText(attachment: InboundAttachment): string {
+  return attachment.kind === 'audio' ? `[微信语音：${attachment.fileName}]` : `[微信文件：${attachment.fileName}]`
+}
+
+function voiceMimeType(encodeType: number | undefined): string {
+  if (encodeType === 7) return 'audio/mpeg'
+  if (encodeType === 8) return 'audio/ogg'
+  return 'audio/silk'
+}
+
+function voiceFileName(encodeType: number | undefined): string {
+  if (encodeType === 7) return 'wechat-audio.mp3'
+  if (encodeType === 8) return 'wechat-audio.ogg'
+  return 'wechat-audio.silk'
+}
+
+function mimeTypeFromName(fileName: string): string {
+  const extension = fileName.toLowerCase().split('.').at(-1)
+  const types: Record<string, string> = {
+    txt: 'text/plain', json: 'application/json', pdf: 'application/pdf',
+    doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    zip: 'application/zip', csv: 'text/csv', md: 'text/markdown',
+  }
+  return (extension && types[extension]) || 'application/octet-stream'
+}
+
+function safeFileName(fileName: string): string {
+  const normalized = fileName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim()
+  return normalized || 'wechat-file'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function asOptionalRecord(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined
 }
 
 export function buildGetUpdatesPayload(cursor: string, channelVersion = DEFAULT_CHANNEL_VERSION) {
@@ -185,10 +277,6 @@ export function buildSendTypingPayload(input: SendTypingInput) {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   if (!isRecord(value)) throw new Error('expected an object')
   return value
@@ -200,4 +288,11 @@ function stringField(record: Record<string, unknown>, key: string): string {
 
 function numberField(record: Record<string, unknown>, key: string): number | undefined {
   return typeof record[key] === 'number' ? record[key] : undefined
+}
+
+function sizeField(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key]
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^\d+$/.test(value)) return Number(value)
+  return undefined
 }
