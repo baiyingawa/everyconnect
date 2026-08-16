@@ -1,9 +1,12 @@
 import {
   buildGetUpdatesPayload,
+  buildGetTypingTicketPayload,
   buildHeaders,
   buildSendTextMessagePayload,
+  buildSendTypingPayload,
   parseInboundMessage,
   parseQRCodeState,
+  parseTypingTicket,
 } from '../src/wechat/protocol.js'
 
 describe('WeChat protocol pure functions', () => {
@@ -63,5 +66,16 @@ describe('WeChat protocol pure functions', () => {
         context_token: 'context', item_list: [{ type: 1, text_item: { text: 'reply' } }],
       },
     })
+  })
+
+  it('builds typing ticket and typing status payloads', () => {
+    expect(buildGetTypingTicketPayload({ ilinkUserId: 'bot', contextToken: 'context' })).toEqual({
+      ilink_user_id: 'bot', context_token: 'context', base_info: { channel_version: '1.0.2' },
+    })
+    expect(parseTypingTicket({ typing_ticket: 'ticket' })).toBe('ticket')
+    expect(buildSendTypingPayload({ ilinkUserId: 'user', typingTicket: 'ticket', status: 1 })).toMatchObject({
+      ilink_user_id: 'user', typing_ticket: 'ticket', status: 1,
+    })
+    expect(buildSendTypingPayload({ ilinkUserId: 'user', typingTicket: 'ticket', status: 2 })).toMatchObject({ status: 2 })
   })
 })

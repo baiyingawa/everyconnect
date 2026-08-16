@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { buildBaseInfo, buildGetUpdatesPayload, buildHeaders, buildSendTextMessagePayload, DEFAULT_BASE_URL, DEFAULT_CHANNEL_VERSION, parseQRCodePayload, parseQRCodeState } from './protocol.js'
+import { buildBaseInfo, buildGetTypingTicketPayload, buildGetUpdatesPayload, buildHeaders, buildSendTextMessagePayload, buildSendTypingPayload, DEFAULT_BASE_URL, DEFAULT_CHANNEL_VERSION, parseQRCodePayload, parseQRCodeState, parseTypingTicket, type TypingStatus } from './protocol.js'
 import { requestJson, type Fetcher } from './transport.js'
 
 export interface WechatClientOptions {
@@ -17,19 +17,23 @@ export interface GetUpdatesResult {
 }
 
 export class WechatApiClient {
-  private readonly baseUrl: string
+  private baseUrl: string
   private readonly channelVersion: string
   private readonly uinFactory: () => string
   private botToken = ''
 
   constructor(private readonly options: WechatClientOptions) {
-    this.baseUrl = (options.baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '')
+    this.baseUrl = normalizeBaseUrl(options.baseUrl || DEFAULT_BASE_URL)
     this.channelVersion = options.channelVersion || DEFAULT_CHANNEL_VERSION
     this.uinFactory = options.uinFactory || (() => Buffer.from(String(Math.floor(Math.random() * 2 ** 32))).toString('base64'))
   }
 
   setBotToken(botToken: string): void {
     this.botToken = botToken
+  }
+
+  setBaseUrl(baseUrl: string): void {
+    this.baseUrl = normalizeBaseUrl(baseUrl)
   }
 
   async getQRCode(signal: AbortSignal) {
@@ -81,9 +85,30 @@ export class WechatApiClient {
     }, signal)
   }
 
+  async getTypingTicket(ilinkUserId: string, contextToken: string, signal: AbortSignal): Promise<string> {
+    const body = await requestJson(this.options.fetcher, `${this.baseUrl}/ilink/bot/getconfig`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body: JSON.stringify(buildGetTypingTicketPayload({ ilinkUserId, contextToken, channelVersion: this.channelVersion })),
+    }, signal)
+    return parseTypingTicket(body)
+  }
+
+  async sendTyping(ilinkUserId: string, typingTicket: string, status: TypingStatus, signal: AbortSignal): Promise<void> {
+    await requestJson(this.options.fetcher, `${this.baseUrl}/ilink/bot/sendtyping`, {
+      method: 'POST',
+      headers: this.authHeaders(),
+      body: JSON.stringify(buildSendTypingPayload({ ilinkUserId, typingTicket, status, channelVersion: this.channelVersion })),
+    }, signal)
+  }
+
   private authHeaders(): Record<string, string> {
     return buildHeaders(this.botToken, this.uinFactory())
   }
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return (baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '')
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

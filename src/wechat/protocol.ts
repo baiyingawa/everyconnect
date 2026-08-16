@@ -25,6 +25,21 @@ export interface SendTextMessageInput {
   channelVersion?: string
 }
 
+export type TypingStatus = 1 | 2
+
+export interface GetTypingTicketInput {
+  ilinkUserId: string
+  contextToken: string
+  channelVersion?: string
+}
+
+export interface SendTypingInput {
+  ilinkUserId: string
+  typingTicket: string
+  status: TypingStatus
+  channelVersion?: string
+}
+
 export function buildHeaders(botToken: string, uin: string): Record<string, string> {
   if (!botToken.trim()) throw new Error('botToken must not be empty')
   if (!uin.trim()) throw new Error('uin must not be empty')
@@ -138,6 +153,34 @@ export function buildSendTextMessagePayload(input: SendTextMessageInput) {
       context_token: input.contextToken,
       item_list: [{ type: 1, text_item: { text: input.text } }],
     },
+    base_info: buildBaseInfo(input.channelVersion),
+  }
+}
+
+export function buildGetTypingTicketPayload(input: GetTypingTicketInput) {
+  if (!input.ilinkUserId.trim()) throw new Error('ilinkUserId must not be empty')
+  if (!input.contextToken.trim()) throw new Error('contextToken must not be empty')
+  return {
+    ilink_user_id: input.ilinkUserId,
+    context_token: input.contextToken,
+    base_info: buildBaseInfo(input.channelVersion),
+  }
+}
+
+export function parseTypingTicket(input: unknown): string {
+  const ticket = stringField(asRecord(input), 'typing_ticket')
+  if (!ticket) throw new Error('typing ticket is missing')
+  return ticket
+}
+
+export function buildSendTypingPayload(input: SendTypingInput) {
+  if (!input.ilinkUserId.trim()) throw new Error('ilinkUserId must not be empty')
+  if (!input.typingTicket.trim()) throw new Error('typingTicket must not be empty')
+  if (input.status !== 1 && input.status !== 2) throw new Error('typing status must be 1 or 2')
+  return {
+    ilink_user_id: input.ilinkUserId,
+    typing_ticket: input.typingTicket,
+    status: input.status,
     base_info: buildBaseInfo(input.channelVersion),
   }
 }

@@ -1,0 +1,27 @@
+name: Feature request
+description: 提议新平台或新能力
+title: "[Feature] "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 需求与使用场景
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 相关平台
+      options:
+        - 微信 Claw/iLink
+        - QQ 机器人
+        - 企业微信
+        - 平台无关
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: 补充信息

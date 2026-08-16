@@ -10,10 +10,14 @@ export interface PollingService {
 export function bindPollingLifecycle(ctx: EffectContext, poller: PollingService): void {
   ctx.effect(() => {
     const controller = new AbortController()
-    void poller.start(controller.signal)
+    void Promise.resolve(poller.start(controller.signal)).catch((error) => {
+      if (!controller.signal.aborted) console.error('[everyconnect] polling stopped:', error)
+    })
     return () => {
       controller.abort()
-      void poller.stop()
+      void Promise.resolve(poller.stop()).catch((error) => {
+        console.error('[everyconnect] polling cleanup failed:', error)
+      })
     }
   }, 'everyconnect: polling lifecycle')
 }

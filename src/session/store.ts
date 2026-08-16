@@ -18,6 +18,7 @@ export interface EveryConnectSession {
     createdAt: number
     lastActiveAt: number
     sessionExpired: boolean
+    recentMessageIds?: string[]
   }
 }
 
@@ -25,6 +26,33 @@ export interface SessionStore {
   load(signal: AbortSignal): Promise<EveryConnectSession | null>
   save(session: EveryConnectSession, signal: AbortSignal): Promise<void>
   clear(signal: AbortSignal): Promise<void>
+}
+
+export interface EveryConnectSettings {
+  mergeAssistantInfo: boolean
+}
+
+export interface SettingsStore {
+  load(signal: AbortSignal): Promise<EveryConnectSettings>
+  save(settings: EveryConnectSettings, signal: AbortSignal): Promise<void>
+}
+
+export const DEFAULT_EVERYCONNECT_SETTINGS: EveryConnectSettings = {
+  mergeAssistantInfo: false,
+}
+
+export function createSession(input: {
+  botToken: string
+  ilinkBotId: string
+  ilinkUserId: string
+  baseUrl: string
+}, now = Date.now()): EveryConnectSession {
+  return {
+    auth: input,
+    cursor: { getUpdatesBuf: '' },
+    contextTokens: {},
+    metadata: { createdAt: now, lastActiveAt: now, sessionExpired: false, recentMessageIds: [] },
+  }
 }
 
 export class SessionStoreError extends Error {
@@ -72,6 +100,39 @@ export class FileSessionStore implements SessionStore {
   }
 }
 
+export class FileSettingsStore implements SettingsStore {
+  constructor(private readonly filePath: string) {}
+
+  async load(signal: AbortSignal): Promise<EveryConnectSettings> {
+    signal.throwIfAborted()
+    try {
+      const raw = await readFile(this.filePath, { encoding: 'utf8', signal })
+      return parseSettings(raw)
+    } catch (error) {
+      if (isMissingFile(error)) return { ...DEFAULT_EVERYCONNECT_SETTINGS }
+      if (error instanceof SessionStoreError) throw error
+      if (isAbort(error)) throw error
+      throw new SessionStoreError(`Failed to read settings store: ${this.filePath}`, 'SESSION_STORE_IO')
+    }
+  }
+
+  async save(settings: EveryConnectSettings, signal: AbortSignal): Promise<void> {
+    signal.throwIfAborted()
+    const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`
+    try {
+      await mkdir(dirname(this.filePath), { recursive: true })
+      await writeFile(temporaryPath, JSON.stringify(settings, null, 2), { encoding: 'utf8', signal })
+      signal.throwIfAborted()
+      await rename(temporaryPath, this.filePath)
+    } catch (error) {
+      if (isAbort(error)) throw error
+      throw new SessionStoreError(`Failed to write settings store: ${this.filePath}`, 'SESSION_STORE_IO')
+    } finally {
+      await rm(temporaryPath, { force: true }).catch(() => undefined)
+    }
+  }
+}
+
 function parseSession(raw: string): EveryConnectSession {
   try {
     const value = JSON.parse(raw) as unknown
@@ -79,6 +140,18 @@ function parseSession(raw: string): EveryConnectSession {
     return value
   } catch {
     throw new SessionStoreError('Session store contains invalid JSON or shape', 'SESSION_STORE_CORRUPT')
+  }
+}
+
+function parseSettings(raw: string): EveryConnectSettings {
+  try {
+    const value = JSON.parse(raw) as unknown
+    if (typeof value !== 'object' || value === null || typeof (value as Record<string, unknown>).mergeAssistantInfo !== 'boolean') {
+      throw new Error('shape')
+    }
+    return { mergeAssistantInfo: (value as { mergeAssistantInfo: boolean }).mergeAssistantInfo }
+  } catch {
+    throw new SessionStoreError('Settings store contains invalid JSON or shape', 'SESSION_STORE_CORRUPT')
   }
 }
 
@@ -94,7 +167,8 @@ function isSession(value: unknown): value is EveryConnectSession {
       cursor && typeof cursor.getUpdatesBuf === 'string' &&
       typeof record.contextTokens === 'object' && record.contextTokens !== null &&
       metadata && typeof metadata.createdAt === 'number' && typeof metadata.lastActiveAt === 'number' &&
-      typeof metadata.sessionExpired === 'boolean',
+      typeof metadata.sessionExpired === 'boolean' &&
+      (metadata.recentMessageIds === undefined || (Array.isArray(metadata.recentMessageIds) && metadata.recentMessageIds.every((id) => typeof id === 'string'))),
   )
 }
 

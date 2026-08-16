@@ -1,7 +1,7 @@
 {
   "name": "everyconnect",
-  "version": "0.2.1",
-  "description": "DSH plugin for connecting WeChat Claw/iLink Bot with AI providers.",
+  "version": "0.4.2",
+  "description": "A DSH multi-platform connector plugin, starting with WeChat Claw/iLink and expanding to QQ and WeCom.",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
@@ -19,6 +19,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
+  "packageManager": "pnpm@11.19.0",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -35,7 +36,7 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown && node scripts/wrap-client.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -46,5 +47,8 @@
     "tsdown": "^0.22.14",
     "typescript": "^5.8.0",
     "vitest": "^3.1.0"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4"
   }
 }
