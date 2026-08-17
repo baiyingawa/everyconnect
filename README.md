@@ -104,7 +104,3 @@ dsh --profile desktop
 - 默认不把 API token 写入日志、session event 或前端状态。
 - 单元测试使用 fake transport；真实微信网络调用放到显式 smoke test。
 
-## 参考
-
-- 本地参考工程：`E:\PROJECT\wechat-ai-bridge`
-- DSH 插件开发指南：`E:\PROJECT\dsh-plugin\DSH_PLUGIN_DEVELOPMENT_GUIDE.md`
