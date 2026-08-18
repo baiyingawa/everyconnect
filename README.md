@@ -4,6 +4,26 @@ EveryConnect 是一个 DSH 多平台连接插件项目，用于把微信 Claw/iL
 
 当前状态：M0 工程骨架、M1 纯协议层、M2 生命周期接线、Web 设置页、微信二维码登录、DSH 会话菜单以及微信音频/文件接收已完成。
 
+## 界面示例
+
+### EveryConnect 设置页
+
+设置页用于启用微信 Claw、配置 iLink 服务地址、查看会话存储路径和填写允许的用户 ID。启用连接器后，可从这里打开二维码完成登录。
+
+![EveryConnect 设置页](./docs/images/everyconnect-settings.png)
+
+### 工作区与任务会话菜单
+
+微信用户发送 `/` 或首次发消息时，会进入工作区与任务会话菜单。发送编号进入对应会话，使用 `/next` 和 `/prev` 翻页，`/home` 或 `/exit` 返回首页。
+
+![工作区与任务会话菜单](./docs/images/wechat-session-menu.png)
+
+### 新建任务
+
+发送 `/new task` 后，先选择任务所属的工作目录，再发送任务名称；发送 `/back` 可取消操作。创建完成后，任务会出现在会话菜单中。
+
+![新建任务流程](./docs/images/wechat-new-task.png)
+
 ## 当前目标
 
 第一阶段覆盖微信 Claw 文本、音频和文件消息闭环：
@@ -65,26 +85,6 @@ dsh --profile desktop
 ```
 
 启动后进入 EveryConnect 设置，开启微信 Claw 连接器，点击“打开二维码”扫码登录。登录凭证、更新游标和上下文 token 由 Host 侧持久化，不进入前端状态和普通日志。
-
-## 界面示例
-
-### EveryConnect 设置页
-
-设置页用于启用微信 Claw、配置 iLink 服务地址、查看会话存储路径和填写允许的用户 ID。启用连接器后，可从这里打开二维码完成登录。
-
-![EveryConnect 设置页](./docs/images/everyconnect-settings.png)
-
-### 工作区与任务会话菜单
-
-微信用户发送 `/` 或首次发消息时，会进入工作区与任务会话菜单。发送编号进入对应会话，使用 `/next` 和 `/prev` 翻页，`/home` 或 `/exit` 返回首页。
-
-![工作区与任务会话菜单](./docs/images/wechat-session-menu.png)
-
-### 新建任务
-
-发送 `/new task` 后，先选择任务所属的工作目录，再发送任务名称；发送 `/back` 可取消操作。创建完成后，任务会出现在会话菜单中。
-
-![新建任务流程](./docs/images/wechat-new-task.png)
 
 ## 架构边界
 
